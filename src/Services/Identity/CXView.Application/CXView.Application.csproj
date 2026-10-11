@@ -1,0 +1,3 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup><ProjectReference Include="../CXView.Domain/CXView.Domain.csproj" /></ItemGroup>
+</Project>

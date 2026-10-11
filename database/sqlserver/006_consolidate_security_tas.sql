@@ -1,0 +1,95 @@
+-- Consolidate the Identity backend on TAS tables and retire security_*.
+USE [cxView];
+GO
+
+IF OBJECT_ID(N'dbo.TAS025',N'U') IS NULL
+CREATE TABLE dbo.TAS025 (
+  IDUSER varchar(36) NOT NULL, IDPERFIL varchar(36) NOT NULL,
+  SACRG bit NOT NULL CONSTRAINT DF_TAS025_SACRG DEFAULT 1,
+  FCHHRACRT datetime2(6) NOT NULL CONSTRAINT DF_TAS025_FCHHRACRT DEFAULT GETDATE(),
+  CONSTRAINT PK_TAS025 PRIMARY KEY(IDUSER,IDPERFIL),
+  CONSTRAINT FK_TAS025_IDUSER FOREIGN KEY(IDUSER) REFERENCES dbo.TAS006(IDUSER),
+  CONSTRAINT FK_TAS025_IDPERFIL FOREIGN KEY(IDPERFIL) REFERENCES dbo.TAS017(IDPERFIL)
+);
+GO
+IF OBJECT_ID(N'dbo.TAS026',N'U') IS NULL
+CREATE TABLE dbo.TAS026 (
+  IDSESION varchar(36) NOT NULL CONSTRAINT PK_TAS026 PRIMARY KEY,
+  IDUSER varchar(36) NOT NULL, FCHHRAEXP datetime2(6) NOT NULL,
+  FLGREVO bit NOT NULL CONSTRAINT DF_TAS026_FLGREVO DEFAULT 0,
+  FCHHRACRT datetime2(6) NOT NULL CONSTRAINT DF_TAS026_FCHHRACRT DEFAULT GETDATE(),
+  CONSTRAINT FK_TAS026_IDUSER FOREIGN KEY(IDUSER) REFERENCES dbo.TAS006(IDUSER)
+);
+GO
+IF NOT EXISTS(SELECT 1 FROM sys.indexes WHERE object_id=OBJECT_ID(N'dbo.TAS026') AND name=N'IX_TAS026_USUARIO_ACTIVO')
+CREATE INDEX IX_TAS026_USUARIO_ACTIVO ON dbo.TAS026(IDUSER,FLGREVO,FCHHRAEXP);
+GO
+IF OBJECT_ID(N'dbo.TAS027',N'U') IS NULL
+CREATE TABLE dbo.TAS027 (
+  IDDESAFIO varchar(36) NOT NULL CONSTRAINT PK_TAS027 PRIMARY KEY,
+  IDUSER varchar(36) NOT NULL, OTPHASH varchar(128) NOT NULL,
+  FCHHRAEXP datetime2(6) NOT NULL,
+  FLGUSADO bit NOT NULL CONSTRAINT DF_TAS027_FLGUSADO DEFAULT 0,
+  FCHHRACRT datetime2(6) NOT NULL CONSTRAINT DF_TAS027_FCHHRACRT DEFAULT GETDATE(),
+  FCHHRAUSO datetime2(6) NULL,
+  CONSTRAINT FK_TAS027_IDUSER FOREIGN KEY(IDUSER) REFERENCES dbo.TAS006(IDUSER)
+);
+GO
+IF NOT EXISTS(SELECT 1 FROM sys.indexes WHERE object_id=OBJECT_ID(N'dbo.TAS027') AND name=N'IX_TAS027_EXPIRACION')
+CREATE INDEX IX_TAS027_EXPIRACION ON dbo.TAS027(FCHHRAEXP,FLGUSADO);
+GO
+
+IF OBJECT_ID(N'dbo.security_permissions',N'U') IS NOT NULL
+EXEC(N'INSERT INTO dbo.TAS015(IDOPCFOMR,NOMOPC,DESCOPC,ESTOPC,SACRG,CUSCRT,FCHHRACRT)
+SELECT CONVERT(varchar(36),p.id),LEFT(p.code,20),LEFT(p.name,50),CASE WHEN p.is_active=1 THEN ''A'' ELSE ''I'' END,1,''migration'',GETDATE()
+FROM dbo.security_permissions p WHERE NOT EXISTS(SELECT 1 FROM dbo.TAS015 t WHERE t.IDOPCFOMR=CONVERT(varchar(36),p.id) OR t.NOMOPC=LEFT(p.code,20));');
+GO
+
+DROP TABLE IF EXISTS dbo.security_otp_challenges;
+DROP TABLE IF EXISTS dbo.security_sessions;
+DROP TABLE IF EXISTS dbo.security_profile_permissions;
+DROP TABLE IF EXISTS dbo.security_user_profiles;
+DROP TABLE IF EXISTS dbo.security_permissions;
+DROP TABLE IF EXISTS dbo.security_profiles;
+DROP TABLE IF EXISTS dbo.security_users;
+GO
+DROP PROCEDURE IF EXISTS dbo.usp_security_user_get_by_username;
+GO
+
+CREATE OR ALTER PROCEDURE dbo.usp_security_user_get_by_id @p_user_id varchar(36) AS BEGIN SET NOCOUNT ON; SELECT IDUSER Id,USUARIO UserName,EMAIL Email,CONVERT(varchar(128),CLAVE) PasswordHash,CONVERT(bit,CASE WHEN ESTUSER='A' AND SACRG=1 THEN 1 ELSE 0 END) IsActive FROM dbo.TAS006 WHERE IDUSER=@p_user_id AND SACRG=1; END;
+GO
+CREATE OR ALTER PROCEDURE dbo.usp_security_permission_codes_by_user @p_user_id varchar(36) AS BEGIN SET NOCOUNT ON; SELECT DISTINCT o.NOMOPC FROM dbo.TAS015 o JOIN dbo.TAS016 uo ON uo.IDOPCFOMR=o.IDOPCFOMR WHERE uo.IDUSER=@p_user_id AND uo.ESTOPC='A' AND uo.SACRG=1 AND o.ESTOPC='A' AND o.SACRG=1 UNION SELECT DISTINCT o.NOMOPC FROM dbo.TAS025 up JOIN dbo.TAS022 po ON po.IDPERFIL=up.IDPERFIL JOIN dbo.TAS015 o ON o.IDOPCFOMR=po.IDOPCFOMR WHERE up.IDUSER=@p_user_id AND up.SACRG=1 AND po.ESTPRFLMNU='A' AND po.SACRG=1 AND o.ESTOPC='A' AND o.SACRG=1; END;
+GO
+CREATE OR ALTER PROCEDURE dbo.usp_security_session_create @p_id varchar(36),@p_user_id varchar(36),@p_expires_at datetime2(6),@p_created_at datetime2(6) AS BEGIN SET NOCOUNT ON; INSERT dbo.TAS026(IDSESION,IDUSER,FCHHRAEXP,FLGREVO,FCHHRACRT) VALUES(@p_id,@p_user_id,@p_expires_at,0,@p_created_at); END;
+GO
+CREATE OR ALTER PROCEDURE dbo.usp_security_session_is_active @p_session_id varchar(36),@p_user_id varchar(36),@p_now datetime2(6) AS BEGIN SET NOCOUNT ON; SELECT CONVERT(int,CASE WHEN EXISTS(SELECT 1 FROM dbo.TAS026 WHERE IDSESION=@p_session_id AND IDUSER=@p_user_id AND FLGREVO=0 AND FCHHRAEXP>@p_now) THEN 1 ELSE 0 END); END;
+GO
+CREATE OR ALTER PROCEDURE dbo.usp_security_session_revoke @p_session_id varchar(36),@p_user_id varchar(36) AS BEGIN SET NOCOUNT ON; UPDATE dbo.TAS026 SET FLGREVO=1 WHERE IDSESION=@p_session_id AND IDUSER=@p_user_id; END;
+GO
+CREATE OR ALTER PROCEDURE dbo.usp_security_otp_create @p_id varchar(36),@p_user_id varchar(36),@p_otp_hash varchar(128),@p_expires_at datetime2(6),@p_created_at datetime2(6) AS BEGIN SET NOCOUNT ON; INSERT dbo.TAS027(IDDESAFIO,IDUSER,OTPHASH,FCHHRAEXP,FLGUSADO,FCHHRACRT) VALUES(@p_id,@p_user_id,@p_otp_hash,@p_expires_at,0,@p_created_at); END;
+GO
+CREATE OR ALTER PROCEDURE dbo.usp_security_otp_get @p_challenge_id varchar(36) AS BEGIN SET NOCOUNT ON; SELECT IDDESAFIO Id,IDUSER UserId,OTPHASH OtpHash,FCHHRAEXP ExpiresAt,FLGUSADO IsConsumed FROM dbo.TAS027 WHERE IDDESAFIO=@p_challenge_id; END;
+GO
+CREATE OR ALTER PROCEDURE dbo.usp_security_otp_consume @p_challenge_id varchar(36),@p_now datetime2(6) AS BEGIN SET NOCOUNT ON; UPDATE dbo.TAS027 SET FLGUSADO=1,FCHHRAUSO=@p_now WHERE IDDESAFIO=@p_challenge_id AND FLGUSADO=0 AND FCHHRAEXP>@p_now; SELECT @@ROWCOUNT; END;
+GO
+CREATE OR ALTER PROCEDURE dbo.usp_security_users_list AS BEGIN SET NOCOUNT ON; SELECT IDUSER Id,USUARIO UserName,EMAIL Email,CONVERT(bit,CASE WHEN ESTUSER='A' AND SACRG=1 THEN 1 ELSE 0 END) IsActive FROM dbo.TAS006 WHERE SACRG=1 ORDER BY USUARIO; END;
+GO
+CREATE OR ALTER PROCEDURE dbo.usp_security_user_create @p_id varchar(36),@p_user_name varchar(20),@p_email varchar(50),@p_password_hash varchar(128),@p_created_at datetime2(6) AS BEGIN SET NOCOUNT ON; INSERT dbo.TAS006(IDUSER,USUARIO,EMAIL,CLAVE,ESTUSER,SACRG,FCHHRACRT) VALUES(@p_id,@p_user_name,@p_email,CONVERT(varbinary(128),@p_password_hash),'A',1,@p_created_at); END;
+GO
+CREATE OR ALTER PROCEDURE dbo.usp_security_user_update @p_id varchar(36),@p_email varchar(50),@p_is_active bit,@p_updated_at datetime2(6) AS BEGIN SET NOCOUNT ON; UPDATE dbo.TAS006 SET EMAIL=@p_email,ESTUSER=CASE WHEN @p_is_active=1 THEN 'A' ELSE 'I' END,FCHHRAACT=@p_updated_at WHERE IDUSER=@p_id AND SACRG=1; SELECT @@ROWCOUNT; END;
+GO
+CREATE OR ALTER PROCEDURE dbo.usp_security_user_deactivate @p_id varchar(36),@p_updated_at datetime2(6) AS BEGIN SET NOCOUNT ON; UPDATE dbo.TAS006 SET ESTUSER='I',SACRG=0,FCHHRAACT=@p_updated_at WHERE IDUSER=@p_id AND SACRG=1; SELECT @@ROWCOUNT; END;
+GO
+CREATE OR ALTER PROCEDURE dbo.usp_security_profiles_list AS BEGIN SET NOCOUNT ON; SELECT IDPERFIL Id,NOMPERFIL Code,DESCPERFIL Name,CONVERT(bit,CASE WHEN ESTPERFIL='A' AND SACRG=1 THEN 1 ELSE 0 END) IsActive FROM dbo.TAS017 WHERE SACRG=1 ORDER BY DESCPERFIL; END;
+GO
+CREATE OR ALTER PROCEDURE dbo.usp_security_profile_create @p_id varchar(36),@p_code varchar(20),@p_name varchar(100),@p_created_at datetime2(6) AS BEGIN SET NOCOUNT ON; INSERT dbo.TAS017(IDPERFIL,NOMPERFIL,DESCPERFIL,ESTPERFIL,SACRG,FCHHRACRT) VALUES(@p_id,@p_code,@p_name,'A',1,@p_created_at); END;
+GO
+CREATE OR ALTER PROCEDURE dbo.usp_security_profile_update @p_id varchar(36),@p_name varchar(100),@p_is_active bit,@p_updated_at datetime2(6) AS BEGIN SET NOCOUNT ON; UPDATE dbo.TAS017 SET DESCPERFIL=@p_name,ESTPERFIL=CASE WHEN @p_is_active=1 THEN 'A' ELSE 'I' END,FCHHRAACT=@p_updated_at WHERE IDPERFIL=@p_id AND SACRG=1; SELECT @@ROWCOUNT; END;
+GO
+CREATE OR ALTER PROCEDURE dbo.usp_security_permissions_list AS BEGIN SET NOCOUNT ON; SELECT IDOPCFOMR Id,NOMOPC Code,DESCOPC Name FROM dbo.TAS015 WHERE ESTOPC='A' AND SACRG=1 ORDER BY NOMOPC; END;
+GO
+CREATE OR ALTER PROCEDURE dbo.usp_security_user_profile_assign @p_user_id varchar(36),@p_profile_id varchar(36) AS BEGIN SET XACT_ABORT ON; BEGIN TRAN; DELETE dbo.TAS025 WHERE IDUSER=@p_user_id; INSERT dbo.TAS025(IDUSER,IDPERFIL) VALUES(@p_user_id,@p_profile_id); COMMIT; END;
+GO
+CREATE OR ALTER PROCEDURE dbo.usp_security_profile_permissions_replace @p_profile_id varchar(36),@p_permission_ids_json nvarchar(max) AS BEGIN SET XACT_ABORT ON; BEGIN TRAN; DELETE dbo.TAS022 WHERE IDPERFIL=@p_profile_id; INSERT dbo.TAS022(IDPRFLOPC,IDPERFIL,IDOPCFOMR,ESTPRFLMNU,SACRG,FCHHRACRT) SELECT CONVERT(varchar(36),NEWID()),@p_profile_id,CONVERT(varchar(36),j.[value]),'A',1,GETDATE() FROM OPENJSON(@p_permission_ids_json) j JOIN dbo.TAS015 o ON o.IDOPCFOMR=CONVERT(varchar(36),j.[value]); COMMIT; END;
+GO
+

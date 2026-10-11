@@ -1,0 +1,98 @@
+-- Idempotent user assignments for modules, menus and submenus.
+USE [cxView];
+GO
+
+CREATE OR ALTER PROCEDURE [dbo].[SP_TAS008_ASIGNAR_MODULO_USUARIO]
+  @iduser varchar(36),
+  @idmodulo varchar(36),
+  @usuario varchar(20)
+AS
+BEGIN
+  SET NOCOUNT ON;
+  SET XACT_ABORT ON;
+
+  IF NOT EXISTS (SELECT 1 FROM dbo.TAS006 WHERE IDUSER = LTRIM(RTRIM(@iduser)) AND ESTUSER = 'A' AND SACRG = 1)
+    THROW 50001, 'El usuario no existe o no está activo.', 1;
+  IF NOT EXISTS (SELECT 1 FROM dbo.TAS007 WHERE IDMOD = LTRIM(RTRIM(@idmodulo)) AND ESTMOD = 'A' AND SACRG = 1)
+    THROW 50002, 'El módulo no existe o no está activo.', 1;
+
+  BEGIN TRANSACTION;
+  IF EXISTS (SELECT 1 FROM dbo.TAS008 WHERE IDUSER = LTRIM(RTRIM(@iduser)) AND IDMOD = LTRIM(RTRIM(@idmodulo)))
+    UPDATE dbo.TAS008 SET ESTMODUSU = 'A', SACRG = 1, CULUSA = NULLIF(LTRIM(RTRIM(@usuario)), ''), FCHHRAACT = SYSDATETIME()
+    WHERE IDUSER = LTRIM(RTRIM(@iduser)) AND IDMOD = LTRIM(RTRIM(@idmodulo));
+  ELSE
+    INSERT INTO dbo.TAS008 (IDMODUSU, IDMOD, IDUSER, ESTMODUSU, SACRG, CUSCRT, FCHHRACRT)
+    VALUES (CONVERT(varchar(36), NEWID()), LTRIM(RTRIM(@idmodulo)), LTRIM(RTRIM(@iduser)), 'A', 1, NULLIF(LTRIM(RTRIM(@usuario)), ''), SYSDATETIME());
+  COMMIT TRANSACTION;
+
+  SELECT TOP (1) IDMODUSU, IDMOD, IDUSER, ESTMODUSU, SACRG, CUSCRT, FCHHRACRT, CULUSA, FCHHRAACT
+  FROM dbo.TAS008 WHERE IDUSER = LTRIM(RTRIM(@iduser)) AND IDMOD = LTRIM(RTRIM(@idmodulo)) AND ESTMODUSU = 'A' AND SACRG = 1
+  ORDER BY FCHHRAACT DESC, FCHHRACRT DESC;
+END;
+GO
+
+CREATE OR ALTER PROCEDURE [dbo].[SP_TAS010_ASIGNAR_MENU_USUARIO]
+  @iduser varchar(36),
+  @idmenu varchar(36),
+  @usuario varchar(20)
+AS
+BEGIN
+  SET NOCOUNT ON;
+  SET XACT_ABORT ON;
+
+  IF NOT EXISTS (SELECT 1 FROM dbo.TAS006 WHERE IDUSER = LTRIM(RTRIM(@iduser)) AND ESTUSER = 'A' AND SACRG = 1)
+    THROW 50003, 'El usuario no existe o no está activo.', 1;
+  IF NOT EXISTS (
+    SELECT 1 FROM dbo.TAS009 menu JOIN dbo.TAS007 module ON module.IDMOD = menu.IDMOD
+    JOIN dbo.TAS008 assignment ON assignment.IDMOD = module.IDMOD AND assignment.IDUSER = LTRIM(RTRIM(@iduser)) AND assignment.ESTMODUSU = 'A' AND assignment.SACRG = 1
+    WHERE menu.IDMENU = LTRIM(RTRIM(@idmenu)) AND menu.ESTMENU = 'A' AND menu.SACRG = 1 AND module.ESTMOD = 'A' AND module.SACRG = 1)
+    THROW 50004, 'El menú no está activo o su módulo no está asignado al usuario.', 1;
+
+  BEGIN TRANSACTION;
+  IF EXISTS (SELECT 1 FROM dbo.TAS010 WHERE IDUSER = LTRIM(RTRIM(@iduser)) AND IDMENU = LTRIM(RTRIM(@idmenu)))
+    UPDATE dbo.TAS010 SET ESTMENUUSU = 'A', SACRG = 1, CULUSA = NULLIF(LTRIM(RTRIM(@usuario)), ''), FCHHRAACT = SYSDATETIME()
+    WHERE IDUSER = LTRIM(RTRIM(@iduser)) AND IDMENU = LTRIM(RTRIM(@idmenu));
+  ELSE
+    INSERT INTO dbo.TAS010 (IDMENUUSU, IDMENU, IDUSER, ESTMENUUSU, SACRG, CUSCRT, FCHHRACRT)
+    VALUES (CONVERT(varchar(36), NEWID()), LTRIM(RTRIM(@idmenu)), LTRIM(RTRIM(@iduser)), 'A', 1, NULLIF(LTRIM(RTRIM(@usuario)), ''), SYSDATETIME());
+  COMMIT TRANSACTION;
+
+  SELECT TOP (1) IDMENUUSU, IDMENU, IDUSER, ESTMENUUSU, SACRG, CUSCRT, FCHHRACRT, CULUSA, FCHHRAACT
+  FROM dbo.TAS010 WHERE IDUSER = LTRIM(RTRIM(@iduser)) AND IDMENU = LTRIM(RTRIM(@idmenu)) AND ESTMENUUSU = 'A' AND SACRG = 1
+  ORDER BY FCHHRAACT DESC, FCHHRACRT DESC;
+END;
+GO
+
+CREATE OR ALTER PROCEDURE [dbo].[SP_TAS012_ASIGNAR_SUBMENU_USUARIO]
+  @iduser varchar(36),
+  @idsubmenu varchar(36),
+  @usuario varchar(20)
+AS
+BEGIN
+  SET NOCOUNT ON;
+  SET XACT_ABORT ON;
+
+  IF NOT EXISTS (SELECT 1 FROM dbo.TAS006 WHERE IDUSER = LTRIM(RTRIM(@iduser)) AND ESTUSER = 'A' AND SACRG = 1)
+    THROW 50005, 'El usuario no existe o no está activo.', 1;
+  IF NOT EXISTS (
+    SELECT 1 FROM dbo.TAS011 submenu JOIN dbo.TAS009 menu ON menu.IDMENU = submenu.IDMENU
+    JOIN dbo.TAS007 module ON module.IDMOD = menu.IDMOD
+    JOIN dbo.TAS008 module_assignment ON module_assignment.IDMOD = module.IDMOD AND module_assignment.IDUSER = LTRIM(RTRIM(@iduser)) AND module_assignment.ESTMODUSU = 'A' AND module_assignment.SACRG = 1
+    JOIN dbo.TAS010 menu_assignment ON menu_assignment.IDMENU = menu.IDMENU AND menu_assignment.IDUSER = LTRIM(RTRIM(@iduser)) AND menu_assignment.ESTMENUUSU = 'A' AND menu_assignment.SACRG = 1
+    WHERE submenu.IDSUBMENU = LTRIM(RTRIM(@idsubmenu)) AND submenu.ESTSUBMNU = 'A' AND submenu.SACRG = 1 AND menu.ESTMENU = 'A' AND menu.SACRG = 1 AND module.ESTMOD = 'A' AND module.SACRG = 1)
+    THROW 50006, 'El submenú no está activo o su menú no está asignado al usuario.', 1;
+
+  BEGIN TRANSACTION;
+  IF EXISTS (SELECT 1 FROM dbo.TAS012 WHERE IDUSER = LTRIM(RTRIM(@iduser)) AND IDSUBMENU = LTRIM(RTRIM(@idsubmenu)))
+    UPDATE dbo.TAS012 SET ESTSMUSER = 'A', SACRG = 1, CULUSA = NULLIF(LTRIM(RTRIM(@usuario)), ''), FCHHRAACT = SYSDATETIME()
+    WHERE IDUSER = LTRIM(RTRIM(@iduser)) AND IDSUBMENU = LTRIM(RTRIM(@idsubmenu));
+  ELSE
+    INSERT INTO dbo.TAS012 (IDSMUSER, IDSUBMENU, IDUSER, ESTSMUSER, SACRG, CUSCRT, FCHHRACRT)
+    VALUES (CONVERT(varchar(36), NEWID()), LTRIM(RTRIM(@idsubmenu)), LTRIM(RTRIM(@iduser)), 'A', 1, NULLIF(LTRIM(RTRIM(@usuario)), ''), SYSDATETIME());
+  COMMIT TRANSACTION;
+
+  SELECT TOP (1) IDSMUSER, IDSUBMENU, IDUSER, ESTSMUSER, SACRG, CUSCRT, FCHHRACRT, CULUSA, FCHHRAACT
+  FROM dbo.TAS012 WHERE IDUSER = LTRIM(RTRIM(@iduser)) AND IDSUBMENU = LTRIM(RTRIM(@idsubmenu)) AND ESTSMUSER = 'A' AND SACRG = 1
+  ORDER BY FCHHRAACT DESC, FCHHRACRT DESC;
+END;
+GO

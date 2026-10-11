@@ -1,0 +1,96 @@
+-- Company maintenance procedures.
+USE `cxView`;
+
+DROP PROCEDURE IF EXISTS `SP_TAS001_CREAR_EMPRESA`;
+DROP PROCEDURE IF EXISTS `SP_TAS001_ACTUALIZAR_EMPRESA`;
+DROP PROCEDURE IF EXISTS `SP_TAS001_DAR_BAJA_EMPRESA`;
+DROP PROCEDURE IF EXISTS `SP_TAS001_CONSULTAR_EMPRESAS`;
+
+DELIMITER $$
+CREATE PROCEDURE `SP_TAS001_CREAR_EMPRESA`(
+  IN empresa varchar(100),
+  IN ruc varchar(11),
+  IN usuario varchar(20)
+)
+MODIFIES SQL DATA
+BEGIN
+  DECLARE idempresa_generada varchar(36) DEFAULT UUID();
+
+  IF NULLIF(TRIM(empresa), '') IS NULL THEN
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'El nombre de la empresa es obligatorio.';
+  END IF;
+
+  INSERT INTO `TAS001` (`IDEMPRESA`, `NOMEMPRESA`, `NRORUC`, `ESTEMP`, `SACRG`, `CUSCRT`, `FCHHRACRT`)
+  VALUES (idempresa_generada, TRIM(empresa), NULLIF(TRIM(ruc), ''), 'A', 1, NULLIF(TRIM(usuario), ''), CURRENT_TIMESTAMP(6));
+
+  SELECT `IDEMPRESA`, `NOMEMPRESA`, `NRORUC`, `ESTEMP`, `SACRG`, `CUSCRT`, `FCHHRACRT`, `CULUSA`, `FCHHRAACT`
+  FROM `TAS001`
+  WHERE `IDEMPRESA` = idempresa_generada;
+END$$
+
+CREATE PROCEDURE `SP_TAS001_ACTUALIZAR_EMPRESA`(
+  IN idempresa varchar(36),
+  IN empresa varchar(100),
+  IN ruc varchar(11),
+  IN estado varchar(1),
+  IN usuario varchar(20)
+)
+MODIFIES SQL DATA
+BEGIN
+  IF NULLIF(TRIM(empresa), '') IS NULL THEN
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'El nombre de la empresa es obligatorio.';
+  END IF;
+
+  IF UPPER(TRIM(estado)) NOT IN ('A', 'I') THEN
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'El estado debe ser A o I.';
+  END IF;
+
+  UPDATE `TAS001`
+  SET `NOMEMPRESA` = TRIM(empresa),
+      `NRORUC` = NULLIF(TRIM(ruc), ''),
+      `ESTEMP` = UPPER(TRIM(estado)),
+      `CULUSA` = NULLIF(TRIM(usuario), ''),
+      `FCHHRAACT` = CURRENT_TIMESTAMP(6)
+  WHERE `IDEMPRESA` = TRIM(idempresa) AND `SACRG` = 1;
+
+  SELECT `IDEMPRESA`, `NOMEMPRESA`, `NRORUC`, `ESTEMP`, `SACRG`, `CUSCRT`, `FCHHRACRT`, `CULUSA`, `FCHHRAACT`
+  FROM `TAS001`
+  WHERE `IDEMPRESA` = TRIM(idempresa) AND `SACRG` = 1;
+END$$
+
+CREATE PROCEDURE `SP_TAS001_DAR_BAJA_EMPRESA`(
+  IN idempresa varchar(36),
+  IN usuario varchar(20)
+)
+MODIFIES SQL DATA
+BEGIN
+  UPDATE `TAS001`
+  SET `ESTEMP` = 'I',
+      `SACRG` = 0,
+      `CULUSA` = NULLIF(TRIM(usuario), ''),
+      `FCHHRAACT` = CURRENT_TIMESTAMP(6)
+  WHERE `IDEMPRESA` = TRIM(idempresa) AND `SACRG` = 1;
+
+  SELECT ROW_COUNT() AS `FILASAFECTADAS`;
+END$$
+
+CREATE PROCEDURE `SP_TAS001_CONSULTAR_EMPRESAS`(
+  IN idempresa varchar(36),
+  IN empresa varchar(100),
+  IN ruc varchar(11),
+  IN estado varchar(1)
+)
+READS SQL DATA
+BEGIN
+  SELECT
+    `IDEMPRESA`, `NOMEMPRESA`, `NRORUC`, `ESTEMP`, `SACRG`,
+    `CUSCRT`, `FCHHRACRT`, `CULUSA`, `FCHHRAACT`
+  FROM `TAS001`
+  WHERE `SACRG` = 1
+    AND (NULLIF(TRIM(idempresa), '') IS NULL OR `IDEMPRESA` = TRIM(idempresa))
+    AND (NULLIF(TRIM(empresa), '') IS NULL OR `NOMEMPRESA` LIKE CONCAT('%', TRIM(empresa), '%'))
+    AND (NULLIF(TRIM(ruc), '') IS NULL OR `NRORUC` = TRIM(ruc))
+    AND (NULLIF(TRIM(estado), '') IS NULL OR `ESTEMP` = UPPER(TRIM(estado)))
+  ORDER BY `NOMEMPRESA`;
+END$$
+DELIMITER ;

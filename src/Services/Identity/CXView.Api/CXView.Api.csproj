@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup><UserSecretsId>CXView-Security-Identity-Api</UserSecretsId></PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../CXView.Application/CXView.Application.csproj" />
+    <ProjectReference Include="../CXView.Infrastructure/CXView.Infrastructure.csproj" />
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.0" />
+    <PackageReference Include="Swashbuckle.AspNetCore" Version="6.6.2" />
+  </ItemGroup>
+</Project>

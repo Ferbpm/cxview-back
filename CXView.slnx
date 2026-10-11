@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/Services/Identity/">
+    <Project Path="src/Services/Identity/CXView.Domain/CXView.Domain.csproj" />
+    <Project Path="src/Services/Identity/CXView.Application/CXView.Application.csproj" />
+    <Project Path="src/Services/Identity/CXView.Infrastructure/CXView.Infrastructure.csproj" />
+    <Project Path="src/Services/Identity/CXView.Api/CXView.Api.csproj" />
+  </Folder>
+</Solution>

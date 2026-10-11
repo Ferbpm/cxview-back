@@ -1,0 +1,48 @@
+-- Expand operation type descriptions, seed the catalog, assign fpenam, and expose the user query.
+USE `cxView`;
+
+ALTER TABLE `TAM069` MODIFY COLUMN `TIPOOPEP` varchar(100) NOT NULL;
+
+UPDATE `TAM069`
+SET `TIPOOPEP` = 'Exportación', `ESTTIPOP` = 'A', `SACRG` = b'1', `CULUSA` = 'FPENAM', `FCHHRAACT` = CURRENT_TIMESTAMP(6)
+WHERE `IDTIPOPE` = 'dki4f081-edrf-cvft-vgyu-f7fea4ecxcsw';
+
+UPDATE `TAM069`
+SET `TIPOOPEP` = 'Importación', `ESTTIPOP` = 'A', `SACRG` = b'1', `CULUSA` = 'FPENAM', `FCHHRAACT` = CURRENT_TIMESTAMP(6)
+WHERE `IDTIPOPE` = 'owlef081-deda-epor-loed-f7fea4ecjfur';
+
+INSERT INTO `TAM069` (`IDTIPOPE`, `TIPOOPEP`, `ESTTIPOP`, `SACRG`, `CUSCRT`)
+SELECT '706caeb5-d0c4-44e7-b792-ae3777a33462', 'Operación local', 'A', b'1', 'FPENAM'
+WHERE NOT EXISTS (SELECT 1 FROM `TAM069` WHERE `IDTIPOPE` = '706caeb5-d0c4-44e7-b792-ae3777a33462');
+
+INSERT INTO `TAM070` (`IDTIPOPE`, `IDUSER`, `ESTTIPOPEJE`, `SACRG`, `CUSCRT`)
+SELECT o.`IDTIPOPE`, u.`IDUSER`, 'A', b'1', 'FPENAM'
+FROM `TAM069` o
+JOIN `TAS006` u ON LOWER(u.`USUARIO`) = 'fpenam'
+WHERE o.`IDTIPOPE` IN (
+  'dki4f081-edrf-cvft-vgyu-f7fea4ecxcsw',
+  'owlef081-deda-epor-loed-f7fea4ecjfur',
+  '706caeb5-d0c4-44e7-b792-ae3777a33462'
+)
+AND NOT EXISTS (
+  SELECT 1 FROM `TAM070` a WHERE a.`IDTIPOPE` = o.`IDTIPOPE` AND a.`IDUSER` = u.`IDUSER`
+);
+
+DROP PROCEDURE IF EXISTS `SP_TAM070_LISTAR_TIPOS_OPERACION_USUARIO`;
+DELIMITER $$
+CREATE PROCEDURE `SP_TAM070_LISTAR_TIPOS_OPERACION_USUARIO`(IN usuario varchar(20))
+READS SQL DATA
+BEGIN
+  SELECT
+    o.`IDTIPOPE`,
+    o.`TIPOOPEP`
+  FROM `TAS006` u
+  JOIN `TAM070` a ON a.`IDUSER` = u.`IDUSER`
+    AND a.`ESTTIPOPEJE` = 'A' AND a.`SACRG` = 1
+  JOIN `TAM069` o ON o.`IDTIPOPE` = a.`IDTIPOPE`
+    AND o.`ESTTIPOP` = 'A' AND o.`SACRG` = 1
+  WHERE u.`USUARIO` = TRIM(usuario)
+    AND u.`ESTUSER` = 'A' AND u.`SACRG` = 1
+  ORDER BY o.`TIPOOPEP`;
+END$$
+DELIMITER ;

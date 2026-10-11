@@ -1,0 +1,41 @@
+-- Create the Chancay site and assign it to fpenam.
+USE `cxView`;
+
+START TRANSACTION;
+
+SET @idempresa = (
+  SELECT d.`IDEMPRESA`
+  FROM `TAS006` u
+  JOIN `TAS003` d ON d.`IDDOM` = u.`IDDOMINIO`
+  WHERE u.`USUARIO` = 'fpenam' AND u.`SACRG` = 1
+  LIMIT 1
+);
+
+SET @idsede = COALESCE(
+  (SELECT s.`IDSEDE` FROM `TAS023` s WHERE s.`IDEMPRESA` = @idempresa AND s.`NOMSEDE` = 'Chancay' LIMIT 1),
+  'c921472a-709c-46ab-80a1-88d4478f5e18'
+);
+
+UPDATE `TAS023`
+SET `ESTSEDE` = 'A', `SACRG` = 1, `CULUSA` = 'seed', `FCHHRAACT` = CURRENT_TIMESTAMP(6)
+WHERE `IDSEDE` = @idsede;
+
+INSERT INTO `TAS023` (`IDSEDE`, `IDEMPRESA`, `NOMSEDE`, `NOMABRV`, `ESTSEDE`, `SACRG`, `CUSCRT`, `FCHHRACRT`)
+SELECT @idsede, @idempresa, 'Chancay', 'CHANCAY', 'A', 1, 'seed', CURRENT_TIMESTAMP(6)
+WHERE @idempresa IS NOT NULL
+  AND NOT EXISTS (SELECT 1 FROM `TAS023` WHERE `IDSEDE` = @idsede);
+
+SET @iduser = (SELECT `IDUSER` FROM `TAS006` WHERE `USUARIO` = 'fpenam' AND `SACRG` = 1 LIMIT 1);
+
+UPDATE `TAS024`
+SET `ESTSEDEUSER` = 'A', `SACRG` = 1, `CULUSA` = 'seed', `FCHHRAACT` = CURRENT_TIMESTAMP(6)
+WHERE `IDUSER` = @iduser AND `IDSEDE` = @idsede;
+
+INSERT INTO `TAS024` (`IDSEDEUSER`, `IDSEDE`, `IDUSER`, `ESTSEDEUSER`, `SACRG`, `CUSCRT`, `FCHHRACRT`)
+SELECT 'ba5b15fe-b71f-47c9-aa37-d75468cafe10', @idsede, @iduser, 'A', 1, 'seed', CURRENT_TIMESTAMP(6)
+WHERE @iduser IS NOT NULL
+  AND EXISTS (SELECT 1 FROM `TAS023` WHERE `IDSEDE` = @idsede)
+  AND NOT EXISTS (SELECT 1 FROM `TAS024` WHERE `IDUSER` = @iduser AND `IDSEDE` = @idsede);
+
+COMMIT;
+
